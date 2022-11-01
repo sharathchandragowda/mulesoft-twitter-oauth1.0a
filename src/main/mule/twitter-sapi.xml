@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="4403c4db-25f5-4f99-adff-f77ca116e3e1" >
+		<http:listener-connection host="0.0.0.0" port="8081" />
+	</http:listener-config>
+	<http:request-config name="twitter-api" doc:name="HTTP Request configuration" doc:id="f7fe2ed2-f4c0-44dc-a001-84ccf30c05c2" >
+		<http:request-connection protocol="HTTPS" host="${twitter.host}" />
+	</http:request-config>
+	<configuration-properties doc:name="Configuration properties" doc:id="8c4d6088-7aaf-4990-9aa4-80cf243b8704" file="config/configuration.yaml" />
+	<flow name="twitter-statuses-lookup-flow" doc:id="0e090472-ee86-46f9-939d-3ab2d8bde056" >
+		<http:listener doc:name="/lookup" doc:id="bad5db98-4076-4176-a67e-405a9bbf1786" config-ref="HTTP_Listener_config" path="/lookup"/>
+		<set-variable value="#[message.attributes.queryParams.id]" doc:name="id" doc:id="e27115ca-5449-474b-8cb7-19874436bbe4" variableName="id"/>
+		<ee:transform doc:name="Calculate oauth_signature" doc:id="5c3aa139-8d10-4c06-856b-f1188e3f640a" >
+			<ee:message >
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="oauth_signature" ><![CDATA[%dw 2.0
+output application/json
+import dw::Crypto
+import toBinary from dw::core::Numbers
+import withMaxSize from dw::core::Strings
+import toBase64 from dw::core::Binaries
+import * from dw::core::URL
+var http_method = "GET"
+var base_url = "https://api.twitter.com/1.1/statuses/lookup.json"
+var query_string = attributes.queryString
+var oauth_consumer_key = Mule::p('oauth.consumer_key')
+var oauth_nonce = toBase64(toBinary(randomInt(99999999999))) withMaxSize 32
+var oauth_timestamp = now() as Number
+var oauth_signature_method = Mule::p('oauth.signature_method')
+var oauth_token = Mule::p('oauth.access_token')
+var oauth_version = Mule::p('oauth.version')
+var consumer_secret = Mule::p('oauth.consumer_secret')
+var oauth_token_secret = Mule::p('oauth.token_secret')
+var parameter_string = query_string ++ '&oauth_consumer_key=' ++ oauth_consumer_key ++ '&oauth_nonce=' ++ oauth_nonce ++ '&oauth_signature_method=' ++ oauth_signature_method ++ '&oauth_timestamp=' ++ oauth_timestamp ++ '&oauth_token=' ++ oauth_token ++ '&oauth_version=' ++ oauth_version
+var signature_base_string = http_method ++ '&' ++ encodeURIComponent(base_url)  ++ '&' ++ encodeURIComponent(parameter_string)
+var signing_key = consumer_secret ++ "&" ++ oauth_token_secret
+var signature = toBase64(Crypto::HMACBinary(signing_key as Binary, signature_base_string as Binary, "HmacSHA1"))
+---
+{
+	http_method: http_method,
+	base_url: base_url,
+	query_string: query_string,
+    oauth_consumer_key: oauth_consumer_key,
+    oauth_token: oauth_token,
+    oauth_signature_method: oauth_signature_method,
+    oauth_timestamp: oauth_timestamp,
+    oauth_nonce: oauth_nonce,
+    oauth_version: oauth_version,
+    consumer_secret: consumer_secret,
+    oauth_token_secret: oauth_token_secret,
+    signing_key: signing_key,
+    parameter_string: parameter_string,
+    signature_base_string: signature_base_string,
+	signature: signature,
+    oauth_signature: encodeURIComponent(signature)
+}    ]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<logger level="INFO" doc:name="oauth_signature" doc:id="a87ccec5-ac23-45b4-9d4e-f9c4b7133162" message="#[vars.oauth_signature]"/>
+		<ee:transform doc:name="Calculate Authorization Header" doc:id="0417c77d-7ff6-485a-bb05-c66d23f90613" >
+			<ee:message >
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="authorization_header" ><![CDATA[%dw 2.0
+output application/java
+---
+'OAuth oauth_consumer_key="' ++ vars.oauth_signature.oauth_consumer_key ++
+'",oauth_token="' ++ vars.oauth_signature.oauth_token ++
+'",oauth_nonce="' ++ vars.oauth_signature.oauth_nonce ++ 
+'",oauth_timestamp="' ++ vars.oauth_signature.oauth_timestamp ++ 
+'",oauth_signature_method="' ++ vars.oauth_signature.oauth_signature_method ++ 
+'",oauth_version="' ++ vars.oauth_signature.oauth_version ++ 
+'",oauth_signature="' ++ vars.oauth_signature.oauth_signature ++ '"']]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<logger level="INFO" doc:name="authorization_header" doc:id="1e4e9522-2268-488b-99cd-fd98f25f8023" message="#[vars.authorization_header]" />
+		<http:request method="GET" doc:name="GET statuses/lookup" doc:id="ec6a0aba-7dcd-4059-adcf-51450790da4d" config-ref="twitter-api" path="/1.1/statuses/lookup.json">
+			<http:headers ><![CDATA[#[output application/java
+---
+{
+	"authorization" : vars.authorization_header
+}]]]></http:headers>
+			<http:query-params ><![CDATA[#[output application/java
+---
+{
+	"id" : vars.id
+}]]]></http:query-params>
+		</http:request>
+	</flow>
+</mule>

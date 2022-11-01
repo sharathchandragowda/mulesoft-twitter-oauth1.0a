@@ -1,0 +1,10 @@
+twitter:
+  host: "api.twitter.com"
+  
+oauth:
+  consumer_key: "4GYhhKfzfufcN62SOnGYsey0K"
+  consumer_secret: "TdtQOOTV6tk6XoLvh5xp59WOVqXOBwEO5dGAItHiuzEW09dbHS"
+  access_token: "1534243008622870529-FQtYRNqD9Ld2FnPpn3mN7GkkqQ5wTG"
+  token_secret: "VKzxy44lJ0DxFwuuy1CSNnWFnXEXkW6pIoH5TuNGVWDO0"
+  signature_method: "HMAC-SHA1"
+  version: "1.0"
